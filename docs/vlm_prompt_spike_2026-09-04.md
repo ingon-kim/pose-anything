@@ -336,3 +336,131 @@ x −0.91~−0.70)과 ID 17(1553프레임, x −0.87~−0.79)만 화면 왼쪽 �
 뒀다 — *"원인은 위치가 아니라 지속시간이었고 `occlusion_hold`(2026-08-11)로
 이미 고쳐졌다. 그 이후 test4/test5 실행 전부에서 ID 변경 0건"*. 이번 측정은
 그 결론과 일치한다.
+
+---
+
+## 3차 — 저장소 통합: `scripts/suggest_prompts.py` (2026-09-07)
+
+**질문:** 2차(§"2차")에서 검증한 방식(VLM 이름 후보 K개 → SAM3 점수 선택)을
+저장소 안 실행 가능한 도구로 통합하고, 손 프롬프트 없이 실측했을 때 실제로
+쓸 만한 목록이 나오는가.
+
+### 무엇
+
+설정 시점에 1회만 도는 도구다 — 런타임에는 물리지 않는다. bag(정지 장면)을
+넣으면 SAM3 프롬프트 문자열 하나를 표준출력 마지막 줄에 찍는다.
+
+파이프라인: bag에서 프레임 샘플(기본 30프레임마다 1장, 최대 12장) → VLM
+(`Qwen/Qwen3-VL-2B-Instruct`)에게 프레임마다 이름 후보 K=4개 요청(질문 끝에
+"로봇이 집을 물체만, 컨베이어·롤러·테이블·배경·손 제외" 지시문 추가) → VLM
+해제 → 그 이름 풀 전체를 SAM3로 전 프레임 검출 → 박스 IoU로 같은 물체끼리
+프레임 내·프레임 간 클러스터링(`cluster_frame`/`link_across_frames`) →
+프레임 연결이 끊겨 갈라진 클러스터를 대표 박스 IoU로 늦게 병합
+(`merge_overlapping_clusters`) → 필터: 제외어(`EXCLUDE_WORDS` — roller,
+conveyor, belt, table, desk, hand, arm, background, floor, surface 등,
+`prompt_suggest.py:223`), 일반명 머리명사(`GENERIC_HEADS` — object, item,
+thing, shape, rectangle, square, circle, stuff, piece, material,
+`prompt_suggest.py:231`), 전체 프레임의 50% 미만에서만 보인 rare 클러스터
+제외, `min_score` 0.75 미만 제외, 충돌(같은 이름이 두 클러스터 이상에서
+1순위) 감점(`choose_prompts`, `prompt_suggest.py:301`) → 최종 목록.
+
+명령 한 줄:
+
+```bash
+python3 scripts/suggest_prompts.py --bag bags/test4
+```
+
+로직은 `src/roboworld_perception/roboworld_perception/prompt_suggest.py`에
+torch/ROS 비의존 순수 함수로 있고, `scripts/suggest_prompts.py`가 프레임
+추출·VLM·SAM3 호출을 감싼다. `--from-json`으로 저장된 클러스터에서 병합·선택
+로직만 다시 돌릴 수도 있다(bag/VLM/SAM3 불필요, CPU 전용).
+`src/roboworld_perception/test/test_prompt_suggest.py`의 신규 테스트 21개는
+직접 재실행해 통과를 확인했다(2.36s). 전체 스위트 218 passed는 구현
+보고를 따른다.
+
+### 실측 — bag별 1차(규칙 전)·2차(규칙 후) 목록 대 손 프롬프트
+
+1차는 `--min-score 0.4`, 손 프롬프트 없이 VLM 2B로 처음 실행한 원시 결과다.
+2차는 같은 클러스터 JSON에 `--from-json`으로 규칙(필터·병합·`min_score`
+0.75)을 다시 적용한 결과다(위 명령으로 직접 재현·확인).
+
+| bag | 1차 목록(규칙 전) | 2차 목록(규칙 후) | 손 프롬프트 | 손 대응 |
+|---|---|---|---|---|
+| test4 | black computer keyboard, instruction manual, black bag, metal roller, pink sticky note | black computer keyboard, instruction manual, black bag, pink sticky note | black bag, keyboard, manual | 3/3 + 가장자리 분홍 포스트잇은 실재 물체 |
+| test5 | black computer keyboard, instruction manual, black carrying bag, white card, pink label | black computer keyboard, instruction manual, black carrying bag | black bag, keyboard, manual, beige notebook | 손 4개 중 3/3 — beige notebook은 12프레임 중 3프레임에서만 보여 rare 필터(0.5)에서 탈락(라벨링 커버리지 한계) |
+| test2 | white laptop, pink block, pink object, bottle, black object, cylindrical object, umbrella item, paper, white rectangle | white laptop, pink block, bottle, black phone, cylinder, paper, white cloth, fabric | thermos, laptop, manual, cell phone | 4/4 (laptop→white laptop, thermos→bottle, cell phone→black phone, manual→paper) — 잔여 4개(pink block, cylinder, white cloth, fabric)는 대상 밖 실재 물체(분홍 블록·천) 또는 중복(cylinder, fabric — cloth가 병합 부작용으로 white cloth+fabric 둘로 남음, 아래 한계 ②) |
+
+### e2e(test2, `run_offline.py` 발행 프레임 기준) — 손 / 1차 제안 / 2차 제안
+
+CSV(`output/suggest/e2e_hand/`, `e2e_suggested/`, `e2e_suggested2/`)에서
+라벨별 발행 행 수·score 평균·10th 백분위수(p10)를 직접 계산했다(전체
+프레임 230).
+
+| 출처 | 라벨 | rows | mean score | p10 |
+|---|---|---|---|---|
+| 손 | laptop | 230 | 0.967 | 0.961 |
+| 손 | cell phone | 230 | 0.931 | 0.918 |
+| 손 | manual | 230 | 0.910 | 0.898 |
+| 손 | thermos | 230 | 0.909 | 0.898 |
+| 1차 제안 | white laptop | 230 | 0.970 | 0.965 |
+| 1차 제안 | pink block | 230 | 0.950 | 0.949 |
+| 1차 제안 | pink object | 230 | 0.947 | 0.941 |
+| 1차 제안 | black object | 230 | 0.930 | 0.926 |
+| 1차 제안 | bottle | 230 | 0.929 | 0.914 |
+| 1차 제안 | cylindrical object | 230 | 0.903 | 0.891 |
+| 1차 제안 | paper | 230 | 0.900 | 0.887 |
+| 1차 제안 | umbrella item | 230 | 0.886 | 0.828 |
+| 1차 제안 | white rectangle | 155 | 0.683 | 0.645 |
+| 2차 제안 | white laptop | 230 | 0.970 | 0.965 |
+| 2차 제안 | pink block | 230 | 0.950 | 0.949 |
+| 2차 제안 | bottle | 230 | 0.929 | 0.914 |
+| 2차 제안 | black phone | 230 | 0.907 | 0.891 |
+| 2차 제안 | cylinder | 230 | 0.904 | 0.898 |
+| 2차 제안 | paper | 230 | 0.900 | 0.887 |
+| 2차 제안 | white cloth | 230 | 0.847 | 0.832 |
+| 2차 제안 | fabric | 44 | 0.199 | 0.111 |
+
+관찰:
+
+- 손 4개 전부 2차 제안 이름으로 대응되고 mean score 가 손 프롬프트와
+  동률 이상이거나 근접이다: laptop 0.967→white laptop 0.970, thermos
+  0.909→bottle 0.929, cell phone 0.931→black phone 0.907, manual
+  0.910→paper 0.900.
+- **fabric 은 44/230행에서만 발행되고 mean 0.199 로 사실상 잡음이다** —
+  같은 프레임 세트에서 white cloth(230행, mean 0.847)가 이미 같은 물체를
+  잡고 있어, fabric 은 병합 부작용으로 남은 중복 이름으로 보인다(위 표
+  test2 대응 칸, 한계 ②).
+- 1차의 white rectangle 도 155/230행으로 덜 채워지고 mean 0.683 로
+  낮다 — 2차 목록에서는 `min_score` 0.75 미만이라 빠졌다.
+
+### 비용
+
+| bag | VLM 로드 | VLM 지연(median) | VLM 피크 VRAM | SAM3 지연(median) | SAM3 피크 VRAM |
+|---|---|---|---|---|---|
+| test2 | 11.79 s | 5748 ms | 4229 MB | 4146 ms | 3615 MB |
+| test4 | 11.43 s | 3335 ms | 4173 MB | 3072 ms | 2276 MB |
+| test5 | 10.65 s | 3449 ms | 4173 MB | 2640 ms | 2157 MB |
+
+값은 `--out` JSON(`vlm_load_time_s`, `vlm_latency_ms_median`,
+`vlm_peak_vram_mb`, `sam_latency_ms_median`, `sam_peak_vram_mb`)에서 그대로
+가져왔다. 1차 실행 stderr 로그에는 타임스탬프가 없어 총 소요는 로드
+시간 + 프레임 수 × (VLM 지연 + SAM3 지연)으로 어림했다 — test2 약 93 s,
+test4 약 89 s, test5 약 85 s(SAM3 로드 수 초는 별도) — **bag당 1~2분**
+범위이고, 설정 시점 1회 비용이라 감당 가능하다.
+
+### 한계
+
+① 프레임 간 연결이 끊기면 같은 물체가 두 이름으로 남을 수 있다(대표 박스
+드리프트로 최종 IoU 0) — 실측 test2 "pink block"/"pink object".
+② 병합이 rare 문턱 근처 클러스터를 살려 이름을 쪼갤 수 있다(cloth→white
+cloth+fabric, 위 e2e 표에서 fabric 44행/mean 0.199로 확인).
+③ 드물게 보이는 물체는 탈락한다(test5 beige notebook, 12프레임 중 3프레임).
+④ 대상 밖 실재 물체(분홍 블록·천)는 VLM instruction 만으로 못 막는다.
+
+**→ 출력 목록은 운영자가 한 번 확인하고 쓴다(설정 도구이지 런타임이
+아니다).**
+
+### 결론
+
+**채택 — 머지한다.** 수동으로 프롬프트 단어를 골라 `PROMPT_ALIASES` 를
+갱신하던 절차를 대체하는 첫 단계다.

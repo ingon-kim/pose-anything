@@ -592,3 +592,5 @@ Isaac 브리지와 토픽이 충돌해 출력이 전량 폐기된다(§3-1, §5)
 [exemplar_2026-09-04.md](exemplar_2026-09-04.md) — `track_exemplars` A/B: 확정 트랙 박스를 SAM3 positive exemplar로 얹으면 약한 프롬프트 점수는 오른다(water bottle 0.366→0.959). 조건 없이 켜면(Try 1) 가림 씬 위치가 파탄(test4 keyboard center_std [2.1 3.0 0.1]→[62.9 124.4 9.9]mm) — last_reject·depth_intrusion 가림 트랙을 제외하면(Try 2) 파탄은 사라지나 가림 씬 발행 프레임이 준다(test4 black bag 241→100행). **기본 off 유지**
 
 [sam3d_spike_2026-09-04.md](sam3d_spike_2026-09-04.md) — Meta SAM 3D Objects(이미지+마스크 → amodal 3D) 채택 가능성 스파이크. 환경 구성·체크포인트 다운로드(13GB)·추론까지 전부 실행 성공했으나, 물체 1개(test4 black bag) 처리에 40분 이상 걸려도 디코드가 안 끝나 중단(공식 요구 VRAM 32GB, 보유 4070 Ti 12GB). **보류 — 32GB 이상 GPU가 생길 때까지.** 정렬 도구(`align.py`, ICP 기반)는 설계만 있고 출력이 없어 실데이터 미검증
+
+[vlm_prompt_spike_2026-09-04.md#3차--저장소-통합-scriptssuggest_promptspy-2026-09-07](vlm_prompt_spike_2026-09-04.md#3차--저장소-통합-scriptssuggest_promptspy-2026-09-07) — 3차: 2차의 VLM 이름 후보→SAM3 점수 선택 방식을 `scripts/suggest_prompts.py`(+`prompt_suggest.py`)로 저장소에 통합. bag 3개 실측(손 프롬프트 없이) 전부 손 프롬프트와 동률 이상, 신규 테스트 21개 통과. **채택 — 머지, 수동 `PROMPT_ALIASES` 프롬프트 고르기를 대체하는 첫 단계**

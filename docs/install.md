@@ -207,6 +207,12 @@ Prompts can be swapped at runtime:
 ros2 topic pub --once /perception/prompt std_msgs/String "data: thermos"
 ```
 
+**Don't know good prompt words for a new bag?** Suggest them from a few frames
+with a local VLM + SAM3 scoring (one-time setup, not for runtime):
+`python3 scripts/suggest_prompts.py --bag path/to/rosbag` — prints a
+comma-separated prompt string on its last line, ready for `--prompts` above.
+See `docs/vlm_prompt_spike_2026-09-04.md` for validation (21/22 at/above manual score).
+
 
 ## Regression gate before shipping
 

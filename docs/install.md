@@ -27,7 +27,7 @@ and a Hugging Face account — everything below ships inside the image. For nati
 ### Docker (recommended — any Ubuntu PC with an NVIDIA GPU)
 
 ```bash
-git clone https://github.com/ingon1026/pose-anything.git
+git clone https://github.com/ingon-kim/pose-anything.git
 cd pose-anything
 export HF_TOKEN=hf_xxxx            # token of an account with facebook/sam3 access
 docker compose run --rm perception                                    # live camera
@@ -118,7 +118,7 @@ machines without a display.
 ### Native install
 
 ```bash
-git clone https://github.com/ingon1026/pose-anything.git
+git clone https://github.com/ingon-kim/pose-anything.git
 cd pose-anything
 
 # ROS 2 side. A ros-base install has none of these; ros-desktop still lacks

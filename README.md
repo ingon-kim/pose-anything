@@ -46,7 +46,7 @@ Full field semantics, parameters, and the withdrawal contract: [`docs/ros2_inter
 ## Quick start
 
 ```bash
-git clone https://github.com/ingon1026/pose-anything.git && cd pose-anything
+git clone https://github.com/ingon-kim/pose-anything.git && cd pose-anything
 export HF_TOKEN=hf_xxxx                          # facebook/sam3 is gated — accept once on Hugging Face
 docker compose run --rm perception               # live RealSense D455
 docker compose run --rm perception ./run.sh bags/my.bag --prompts "book"   # or a rosbag
